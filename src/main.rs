@@ -1,5 +1,6 @@
 mod app;
 mod structs;
+mod utils;
 use app::App;
 
 fn main() {

@@ -1,14 +1,16 @@
 use chrono::{Local, NaiveDate, Utc};
-use dialoguer::Select;
+use dialoguer::{FuzzySelect, Select};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs::File,
     io::{BufReader, BufWriter},
-    process::Command,
 };
 
-use crate::structs::{Session, WorkDay};
+use crate::{
+    structs::{Session, WorkDay},
+    utils::clear_console,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct App {
@@ -17,21 +19,8 @@ pub struct App {
 }
 
 impl App {
-    // TODO: Not application code, moive to some sort of helper module
-    fn clear_console(&self) {
-        if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(&["/C", "cls"])
-                .status()
-                .expect("failed to clear console");
-        } else {
-            Command::new("clear")
-                .status()
-                .expect("failed to clear console");
-        }
-    }
-
     // WARNING: Not entirely sure this is working correctly, it might be overwriting days???? idk.
+    // maybe its fine
     // TODO: Need to save file in the home directory of user e.g ~/.clocko/data.json instead of local
     //to wherever this program executes from.
     pub fn new() -> Self {
@@ -63,9 +52,9 @@ impl App {
 
         app
     }
-    // NOTE: Main app loop
+    // INFO: Main app loop
     pub fn init(&mut self) {
-        self.clear_console();
+        clear_console();
         loop {
             // check if an active session exists
             let has_active_session = self.data.get(&self.today).unwrap().active_session.is_some();
@@ -76,7 +65,9 @@ impl App {
                 (1, "Clock Out"),
                 (2, "View Current Session"),
                 (3, "Get Total Working Time"),
-                (4, "Exit"),
+                (4, "Select Day"),
+                (5, "Select Week"),
+                (6, "Exit"),
             ]
             .into_iter()
             .filter(|&selection| match selection.0 {
@@ -97,84 +88,90 @@ impl App {
                 .unwrap();
 
             let (answer, _) = opts[selection];
+
             /* Selection Resolvers */
+            match answer {
+                // INFO: Clock In
+                0 => match self.create_session() {
+                    Ok(sesh) => {
+                        let local_time = sesh.start.with_timezone(&Local);
+                        let formatted_time = local_time.format("%I:%M%p").to_string();
 
-            // Clock in
-            if answer == 0 {
-                if has_active_session {
+                        println!("Session started at {}", formatted_time);
+                        self.write_data();
+                    }
+                    Err(msg) => {
+                        println!("Error: {msg}");
+                    }
+                },
+                // INFO: Clock Out
+                1 => match self.end_active_session() {
+                    Ok(sesh) => {
+                        let duration = sesh.end.unwrap() - sesh.start;
+                        println!(
+                            "Hours: {}, Minutes: {}",
+                            duration.num_hours(),
+                            duration.num_minutes() % 60
+                        );
+                    }
+                    Err(msg) => {
+                        println!("Error: {msg}");
+                    }
+                },
+                // INFO: Get Active Session
+                2 => {
+                    let sesh = self.get_active_session();
+
+                    let duration = Utc::now() - sesh.start;
+
                     println!(
-                        "You cannot clock in while there is an active session for the current day"
+                        "Hours: {} Minutes: {}",
+                        duration.num_hours(),
+                        duration.num_minutes() % 60
                     );
+                }
+                // INFO: Get Total Time
+                3 => {
+                    let todays_sessions = &self.data.get(&self.today).unwrap().sessions;
+
+                    let mut total_minutes = 0;
+                    for sesh in todays_sessions.iter() {
+                        let duration = sesh.end.unwrap() - sesh.start;
+
+                        total_minutes += duration.num_minutes();
+                    }
+
+                    println!(
+                        "Hours {} Minutes {}",
+                        total_minutes / 60,
+                        total_minutes % 60
+                    );
+                }
+                // INFO: Select Day
+                4 => {
+                    let all_days = &self
+                        .data
+                        .iter()
+                        .map(|(key, _)| key)
+                        .collect::<Vec<&NaiveDate>>();
+
+                    let selection = FuzzySelect::new()
+                        .with_prompt("Select a Work Day")
+                        .items(&all_days)
+                        .interact()
+                        .unwrap();
+                },
+                5 => {
+
+
+                }
+                // INFO: Exit
+                6 => {
+                    break;
+                }
+                _ => {
                     continue;
                 }
-
-                let sesh = self.create_session().unwrap();
-
-                let local_time = sesh.start.with_timezone(&Local);
-                let formatted_time = local_time.format("%I:%M%p").to_string();
-
-                println!("Session started at {}", formatted_time);
-                self.write_data();
-            }
-
-            // Clock out
-            if answer == 1 {
-                if !has_active_session {
-                    println!("You cannot clock out when there is no active session.");
-                    continue;
-                }
-
-                // End session and get clone of session
-                let sesh = self.end_active_session().unwrap();
-
-                // Display duration of time to user Hours: {} Minutes: {}
-                let duration = sesh.end.unwrap() - sesh.start;
-                println!(
-                    "Hours: {}, Minutes: {}",
-                    duration.num_hours(),
-                    duration.num_minutes() % 60
-                );
-            }
-
-            // View Current Session
-            if answer == 2 {
-                if !has_active_session {
-                    println!("No active session to view");
-                    continue;
-                }
-
-                let sesh = self.get_active_session();
-
-                let duration = Utc::now() - sesh.start;
-
-                println!(
-                    "Hours: {} Minutes: {}",
-                    duration.num_hours(),
-                    duration.num_minutes() % 60
-                );
-            }
-            // Get total working time for today
-            if answer == 3 {
-                let todays_sessions = &self.data.get(&self.today).unwrap().sessions;
-
-                let total_hours = 0;
-                let mut total_minutes = 0;
-                for sesh in todays_sessions.iter() {
-                    let duration = sesh.end.unwrap() - sesh.start;
-
-                    total_minutes += duration.num_minutes();
-                }
-
-                println!(
-                    "Hours {} Minutes {}",
-                    total_minutes / 60,
-                    total_minutes % 60
-                );
-            }
-
-            // Exit
-            if answer == 4 {
-                break;
             }
         }
     }
@@ -186,14 +183,12 @@ impl App {
 
         active_session
     }
-    // FIX: Either return an option for everything or protect on the caller level and just unwrap,
-    // not both
-    pub fn create_session(&mut self) -> Option<&Session> {
+    pub fn create_session(&mut self) -> Result<&Session, &'static str> {
         let work_day = self.data.get_mut(&self.today).unwrap();
 
         if work_day.active_session.is_some() {
             println!("A session is already active");
-            return None;
+            return Err("Cannot create a session while theres an active session");
         } else {
             let sesh = Session {
                 start: Utc::now(),
@@ -207,11 +202,11 @@ impl App {
 
             let sesh_ref = self.data.get(&self.today).unwrap().sessions.last().unwrap();
 
-            return Some(sesh_ref);
+            return Ok(sesh_ref);
         }
     }
 
-    pub fn end_active_session(&mut self) -> Option<Session> {
+    pub fn end_active_session(&mut self) -> Result<&Session, &'static str> {
         let work_day = self.data.get_mut(&Utc::now().date_naive()).unwrap();
 
         if let Some(idx) = work_day.active_session {
@@ -220,10 +215,12 @@ impl App {
 
             self.write_data();
 
-            return Some(self.data.get(&self.today).unwrap().sessions[idx].clone());
+            let sesh_ref = self.data.get(&self.today).unwrap().sessions.last().unwrap();
+
+            return Ok(sesh_ref);
         }
 
-        return None;
+        return Err("No active session");
     }
 
     fn read_data() -> App {
