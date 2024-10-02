@@ -32,6 +32,8 @@ impl App {
     }
 
     // WARNING: Not entirely sure this is working correctly, it might be overwriting days???? idk.
+    // TODO: Need to save file in the home directory of user e.g ~/.clocko/data.json instead of local
+    //to wherever this program executes from.
     pub fn new() -> Self {
         let today = Utc::now().date_naive();
         let mut app;
@@ -52,7 +54,7 @@ impl App {
                 today,
                 WorkDay {
                     active_session: None,
-                    date: today.clone(),
+                    date: today,
                     sessions: Vec::new(),
                 },
             );
@@ -61,7 +63,7 @@ impl App {
 
         app
     }
-    // Main CLI Loop
+    // NOTE: Main app loop
     pub fn init(&mut self) {
         self.clear_console();
         loop {
@@ -208,11 +210,6 @@ impl App {
             return Some(sesh_ref);
         }
     }
-
-
-
-
-
 
     pub fn end_active_session(&mut self) -> Option<Session> {
         let work_day = self.data.get_mut(&Utc::now().date_naive()).unwrap();
