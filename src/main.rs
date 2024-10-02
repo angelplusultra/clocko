@@ -76,33 +76,35 @@ impl App {
 
             // Filter selection options
             let opts = vec![
-                "Clock In",
-                "Clock Out",
-                "View Current Session",
-                "Get Total Working Time",
-                "Exit",
+                (0, "Clock In"),
+                (1, "Clock Out"),
+                (2, "View Current Session"),
+                (3, "Get Total Working Time"),
+                (4, "Exit"),
             ]
             .into_iter()
-            .filter(|&selection| match selection {
-                "Clock In" if has_active_session => false,
-                "Clock Out" if !has_active_session => false,
-                "View Current Session" if !has_active_session => false, // Only show if an active session exists
+            .filter(|&selection| match selection.0 {
+                0 if has_active_session => false,
+                1 if !has_active_session => false,
+                2 if !has_active_session => false, // Only show if an active session exists
                 _ => true,
             })
-            .collect::<Vec<&str>>();
+            .collect::<Vec<(i32, &str)>>();
 
+
+            let opts_formatted = opts.iter().map(|&(_, v)| v).collect::<Vec<&str>>();
             // Display select menu
             let selection = Select::new()
                 .with_prompt("What do you choose?")
-                .items(&opts)
+                .items(&opts_formatted)
                 .interact()
                 .unwrap();
 
-            let answer = opts[selection];
+            let (answer, _) = opts[selection];
             /* Selection Resolvers */
 
             // Clock in
-            if answer == "Clock In" {
+            if answer == 0 {
                 if has_active_session {
                     println!(
                         "You cannot clock in while there is an active session for the current day"
@@ -117,7 +119,7 @@ impl App {
             }
 
             // Clock out
-            if answer == "Clock Out" {
+            if answer == 1 {
                 if !has_active_session {
                     println!("You cannot clock out when there is no active session.");
                     continue;
@@ -131,11 +133,11 @@ impl App {
             }
 
             // Get total working time for today
-            if answer == "View Active Session" {}
+            if answer == 2 {}
 
             // View Current Session
-            if answer == "View Current Session" {}
-            if answer == "Exit" {
+            if answer == 3 {}
+            if answer == 4 {
                 break;
             }
         }
