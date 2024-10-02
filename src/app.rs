@@ -17,6 +17,7 @@ pub struct App {
 }
 
 impl App {
+    // TODO: Not application code, moive to some sort of helper module
     fn clear_console(&self) {
         if cfg!(target_os = "windows") {
             Command::new("cmd")
@@ -30,6 +31,7 @@ impl App {
         }
     }
 
+    // WARNING: Not entirely sure this is working correctly, it might be overwriting days???? idk.
     pub fn new() -> Self {
         let today = Utc::now().date_naive();
         let mut app;
@@ -132,6 +134,23 @@ impl App {
                 );
             }
 
+            // View Current Session
+            if answer == 2 {
+                if !has_active_session {
+                    println!("No active session to view");
+                    continue;
+                }
+
+                let sesh = self.get_active_session();
+
+                let duration = Utc::now() - sesh.start;
+
+                println!(
+                    "Hours: {} Minutes: {}",
+                    duration.num_hours(),
+                    duration.num_minutes() % 60
+                );
+            }
             // Get total working time for today
             if answer == 3 {
                 let todays_sessions = &self.data.get(&self.today).unwrap().sessions;
@@ -144,11 +163,12 @@ impl App {
                     total_minutes += duration.num_minutes();
                 }
 
-                println!("Total Minutes {total_minutes}")
+                println!(
+                    "Hours {} Minutes {}",
+                    total_minutes / 60,
+                    total_minutes % 60
+                );
             }
-
-            // View Current Session
-            if answer == 3 {}
 
             // Exit
             if answer == 4 {
@@ -157,8 +177,17 @@ impl App {
         }
     }
 
-    pub fn create_session(&mut self) -> Option<Session> {
-        let work_day = self.data.get_mut(&Utc::now().date_naive()).unwrap();
+    fn get_active_session(&self) -> &Session {
+        let idx = self.data.get(&self.today).unwrap().active_session.unwrap();
+
+        let active_session = &self.data.get(&self.today).unwrap().sessions[idx];
+
+        active_session
+    }
+    // FIX: Either return an option for everything or protect on the caller level and just unwrap,
+    // not both
+    pub fn create_session(&mut self) -> Option<&Session> {
+        let work_day = self.data.get_mut(&self.today).unwrap();
 
         if work_day.active_session.is_some() {
             println!("A session is already active");
@@ -169,14 +198,21 @@ impl App {
                 end: None,
             };
 
-            work_day.sessions.push(sesh.clone());
+            work_day.sessions.push(sesh);
             work_day.active_session = Some(work_day.sessions.len() - 1);
 
             self.write_data();
 
-            return Some(sesh);
+            let sesh_ref = self.data.get(&self.today).unwrap().sessions.last().unwrap();
+
+            return Some(sesh_ref);
         }
     }
+
+
+
+
+
 
     pub fn end_active_session(&mut self) -> Option<Session> {
         let work_day = self.data.get_mut(&Utc::now().date_naive()).unwrap();
@@ -198,7 +234,7 @@ impl App {
         let reader = BufReader::new(file);
 
         let data: App =
-            serde_json::from_reader(reader).expect("Errro converting the buffer into json");
+            serde_json::from_reader(reader).expect("Error converting the buffer into json");
 
         data
     }
