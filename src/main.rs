@@ -5,7 +5,7 @@ use std::{
     process::Command,
 };
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use dialoguer::Select;
 use serde::{Deserialize, Serialize};
 
@@ -70,9 +70,6 @@ impl App {
         loop {
             // check if an active session exists
             let has_active_session = self.data.get(&self.today).unwrap().active_session.is_some();
-            if has_active_session {
-                println!("You have an active session");
-            }
 
             // Filter selection options
             let opts = vec![
@@ -90,7 +87,6 @@ impl App {
                 _ => true,
             })
             .collect::<Vec<(i32, &str)>>();
-
 
             let opts_formatted = opts.iter().map(|&(_, v)| v).collect::<Vec<&str>>();
             // Display select menu
@@ -114,7 +110,10 @@ impl App {
 
                 let sesh = self.create_session().unwrap();
 
-                println!("Session started at {}", sesh.start);
+                let local_time = sesh.start.with_timezone(&Local);
+                let formatted_time = local_time.format("%I:%M%p").to_string();
+
+                println!("Session started at {}", formatted_time);
                 self.write_data();
             }
 
@@ -129,7 +128,12 @@ impl App {
                 let sesh = self.end_active_session().unwrap();
 
                 // Display duration of time to user Hours: {} Minutes: {}
-                println!("Hours: {}, Minutes: {}", sesh.start, sesh.end.unwrap());
+                let duration = sesh.end.unwrap() - sesh.start;
+                println!(
+                    "Hours: {}, Minutes: {}",
+                    duration.num_hours(),
+                    duration.num_minutes() % 60
+                );
             }
 
             // Get total working time for today
