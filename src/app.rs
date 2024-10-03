@@ -59,6 +59,7 @@ impl App {
         loop {
             // check if an active session exists
             let has_active_session = self.data.get(&self.today).unwrap().active_session.is_some();
+            let has_no_sessions = self.data.values().all(|v| v.sessions.is_empty());
 
             // Filter selection options
             let opts = vec![
@@ -76,6 +77,7 @@ impl App {
                 1 if !has_active_session => false,
                 2 if !has_active_session => false, // Only show if an active session exists
                 3 if has_active_session => false,
+                4 | 5 if has_no_sessions => false,
                 _ => true,
             })
             .collect::<Vec<(i32, &str)>>();
