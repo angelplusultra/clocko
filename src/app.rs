@@ -1,4 +1,4 @@
-use chrono::{Local, NaiveDate, Utc};
+use chrono::{Datelike, Duration, Local, NaiveDate};
 use dialoguer::{FuzzySelect, Select};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,7 +24,7 @@ impl App {
     // TODO: Need to save file in the home directory of user e.g ~/.clocko/data.json instead of local
     //to wherever this program executes from.
     pub fn new() -> Self {
-        let today = Utc::now().date_naive();
+        let today = Local::now().date_naive();
         let mut app;
 
         // Try to read data from data.json
@@ -63,8 +63,8 @@ impl App {
             let opts = vec![
                 (0, "Clock In"),
                 (1, "Clock Out"),
-                (2, "View Current Session"),
-                (3, "Get Total Working Time"),
+                (2, "View Current Session's Total Working Time"),
+                (3, "View Today's Total Working Time"),
                 (4, "Select Day"),
                 (5, "Select Week"),
                 (6, "Exit"),
@@ -118,11 +118,11 @@ impl App {
                         println!("Error: {msg}");
                     }
                 },
-                // INFO: Get Active Session
+                // INFO: View Active Session's Total Working Time
                 2 => {
                     let sesh = self.get_active_session();
 
-                    let duration = Utc::now() - sesh.start;
+                    let duration = Local::now() - sesh.start;
 
                     println!(
                         "Hours: {} Minutes: {}",
@@ -130,16 +130,9 @@ impl App {
                         duration.num_minutes() % 60
                     );
                 }
-                // INFO: Get Total Time
+                // INFO: View Today's Total Working Time
                 3 => {
-                    let todays_sessions = &self.data.get(&self.today).unwrap().sessions;
-
-                    let mut total_minutes = 0;
-                    for sesh in todays_sessions.iter() {
-                        let duration = sesh.end.unwrap() - sesh.start;
-
-                        total_minutes += duration.num_minutes();
-                    }
+                    let total_minutes = self.get_total_minutes_from_day(&self.today);
 
                     println!(
                         "Hours {} Minutes {}",
@@ -160,10 +153,89 @@ impl App {
                         .items(&all_days)
                         .interact()
                         .unwrap();
-                },
+
+                    let answer = all_days[selection];
+
+                    let total_minutes = self.get_total_minutes_from_day(answer);
+
+                    println!(
+                        "Hours {} Minutes {}",
+                        total_minutes / 60,
+                        total_minutes % 60
+                    );
+                }
+                // INFO: Select Week
+                // WARNING: Not tested
                 5 => {
+                    // 1. Instantiate a hash map to contain a week string (2024-09-02 - 2024-10-05)
+                    //    as key and all of its associated work sessions as a value Vec<&Session>
+                    let mut week_hash = HashMap::<String, Vec<&Session>>::new();
+
+                    // 2. filter out sessionless days
+                    let sessionful_days = self
+                        .data
+                        .iter()
+                        .filter(|&(_, day)| !day.sessions.is_empty())
+                        .collect::<HashMap<&NaiveDate, &WorkDay>>();
+
+                    // 3. Loop through every day (max 365)
+                    for (date, work_day) in sessionful_days {
+
+                        // 4. Compute the week range
+                        let weekday = date.weekday();
+
+                        let days_to_sunday = weekday.num_days_from_sunday();
+
+                        let sunday = *date - Duration::days(days_to_sunday as i64);
+                        let saturday = sunday + Duration::days(6);
+
+                        let week_range = format!("{} - {}", sunday, saturday);
+
+                        
 
 
+                        // 5. Check hash if week range string exists, if so push all sessions of work
+                        // day into vector, else create a new vector, push all sessions into it and
+                        // insert into hash
+                        if let Some(sessions) = week_hash.get_mut(&week_range) {
+                            for sesh in work_day.sessions.iter() {
+                                sessions.push(sesh);
+                            }
+                        } else {
+                            let mut week_sessions = Vec::<&Session>::new();
+
+                            for sesh in work_day.sessions.iter() {
+                                week_sessions.push(sesh);
+                            }
+                            week_hash.insert(week_range, week_sessions);
+                        }
+                    }
+
+                    // 6. Format week_range string options 
+                    let opts = week_hash.iter().map(|(v, _)| v).collect::<Vec<&String>>();
+
+                    // 7. Collect user input
+                    let selection = FuzzySelect::new()
+                        .with_prompt("Select a week")
+                        .items(&opts)
+                        .interact()
+                        .unwrap();
+
+                    let week_key = opts[selection];
+
+                    // 8. Compute total time within week range and present
+                    let mut total_minutes = 0;
+                    for &sesh in week_hash[week_key].iter() {
+                        let duration = sesh.end.unwrap_or(Local::now()) - sesh.start;
+
+                        total_minutes += duration.num_minutes();
+                    }
+
+                    println!(
+                        "Hours: {}, Minutes: {}",
+                        total_minutes / 60,
+                        total_minutes % 60
+                    );
                 }
                 // INFO: Exit
                 6 => {
@@ -183,6 +255,18 @@ impl App {
 
         active_session
     }
+
+    fn get_total_minutes_from_day(&self, day: &NaiveDate) -> i64 {
+        let sessions = &self.data.get(day).unwrap().sessions;
+        let mut total_minutes = 0;
+        for sesh in sessions.iter() {
+            let duration = sesh.end.unwrap_or(Local::now()) - sesh.start;
+
+            total_minutes += duration.num_minutes();
+        }
+
+        return total_minutes;
+    }
     pub fn create_session(&mut self) -> Result<&Session, &'static str> {
         let work_day = self.data.get_mut(&self.today).unwrap();
 
@@ -191,7 +275,7 @@ impl App {
             return Err("Cannot create a session while theres an active session");
         } else {
             let sesh = Session {
-                start: Utc::now(),
+                start: Local::now(),
                 end: None,
             };
 
@@ -207,10 +291,10 @@ impl App {
     }
 
     pub fn end_active_session(&mut self) -> Result<&Session, &'static str> {
-        let work_day = self.data.get_mut(&Utc::now().date_naive()).unwrap();
+        let work_day = self.data.get_mut(&self.today).unwrap();
 
         if let Some(idx) = work_day.active_session {
-            work_day.sessions[idx].end = Some(Utc::now());
+            work_day.sessions[idx].end = Some(Local::now());
             work_day.active_session = None;
 
             self.write_data();
