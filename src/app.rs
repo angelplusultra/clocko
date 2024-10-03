@@ -5,38 +5,37 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufReader, BufWriter},
+    path::PathBuf,
 };
 
 use crate::{
     structs::{Session, WorkDay},
-    utils::clear_console,
+    utils::{clear_console, instantiate_data_dir},
 };
 
 #[derive(Serialize, Deserialize)]
 pub struct App {
     pub data: HashMap<NaiveDate, WorkDay>,
     pub today: NaiveDate,
+    pub data_path: PathBuf,
 }
 
 impl App {
-    // WARNING: Not entirely sure this is working correctly, it might be overwriting days???? idk.
-    // maybe its fine
-    // TODO: Need to save file in the home directory of user e.g ~/.clocko/data.json instead of local
-    //to wherever this program executes from.
     pub fn new() -> Self {
         let today = Local::now().date_naive();
-        let mut app;
+
+        let data_path = instantiate_data_dir();
+        let mut app: App = App {
+            data_path: data_path.clone(),
+            data: HashMap::new(),
+            today: today.clone(),
+        };
 
         // Try to read data from data.json
-        if let Ok(_) = File::open("data.json") {
-            app = App::read_data();
-        } else {
-            app = App {
-                today: today.clone(),
-                data: HashMap::new(),
-            };
+        if let Ok(_) = File::open(&data_path) {
+            app = app.read_data();
+            app.today = today;
         }
-
         // Ensure that today's WorkDay exists in app.data
         if !app.data.contains_key(&today) {
             app.data.insert(
@@ -47,10 +46,12 @@ impl App {
                     sessions: Vec::new(),
                 },
             );
-            app.write_data();
         }
 
-        app
+        // save current state of app to file
+        app.write_data();
+
+        return app;
     }
     // INFO: Main app loop
     pub fn init(&mut self) {
@@ -180,7 +181,6 @@ impl App {
 
                     // 3. Loop through every day (max 365)
                     for (date, work_day) in sessionful_days {
-
                         // 4. Compute the week range
                         let weekday = date.weekday();
 
@@ -190,9 +190,6 @@ impl App {
                         let saturday = sunday + Duration::days(6);
 
                         let week_range = format!("{} - {}", sunday, saturday);
-
-                        
-
 
                         // 5. Check hash if week range string exists, if so push all sessions of work
                         // day into vector, else create a new vector, push all sessions into it and
@@ -211,7 +208,7 @@ impl App {
                         }
                     }
 
-                    // 6. Format week_range string options 
+                    // 6. Format week_range string options
                     let opts = week_hash.iter().map(|(v, _)| v).collect::<Vec<&String>>();
 
                     // 7. Collect user input
@@ -307,8 +304,8 @@ impl App {
         return Err("No active session");
     }
 
-    fn read_data() -> App {
-        let file = File::open("data.json").expect("Error reading data file");
+    fn read_data(&self) -> App {
+        let file = File::open(&self.data_path).expect("Error reading data file");
         let reader = BufReader::new(file);
 
         let data: App =
@@ -318,7 +315,7 @@ impl App {
     }
 
     fn write_data(&self) {
-        if let Ok(file) = File::create("data.json") {
+        if let Ok(file) = File::create(&self.data_path) {
             let writer = BufWriter::new(file);
 
             let _ = serde_json::to_writer(writer, &self);
