@@ -252,7 +252,7 @@ impl App {
 
         let active_session = &self.data.get(&self.today).unwrap().sessions[idx];
 
-        active_session
+        return active_session;
     }
 
     fn get_total_minutes_from_day(&self, day: &NaiveDate) -> i64 {
